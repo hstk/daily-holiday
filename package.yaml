@@ -20,6 +20,7 @@ dependencies:
 - text
 - scotty
 - random
+- lucid
 
 library:
   source-dirs: src
