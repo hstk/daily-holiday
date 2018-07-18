@@ -1,10 +1,6 @@
 name:                daily-holiday
 version:             0.1.0.0
-github:              "githubuser/daily-holiday"
-license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2018 Author name here"
+github:              "hstk/daily-holiday"
 
 extra-source-files:
 - README.md
