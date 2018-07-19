@@ -1,2 +1,2 @@
 # daily-holiday
-A simple Scotty example app
+A simple, iterative Scotty example app. Idea stolen from DarkArc's http://dailyholiday.haxing.ninja/.
