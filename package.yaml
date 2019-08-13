@@ -18,9 +18,14 @@ description:         Please see the README on GitHub at <https://github.com/gith
 dependencies:
 - base >= 4.7 && < 5
 - text
+- time
 - scotty
 - random
 - lucid
+- beam-core
+- beam-sqlite
+- sqlite-simple
+- containers
 
 library:
   source-dirs: src
