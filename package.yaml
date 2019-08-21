@@ -26,6 +26,8 @@ dependencies:
 - beam-sqlite
 - sqlite-simple
 - containers
+- aeson
+- bytestring
 
 library:
   source-dirs: src

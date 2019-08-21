@@ -11,7 +11,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module Persistence where
+module BeamBackend where
 
 import Prelude hiding (Word)
 

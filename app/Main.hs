@@ -11,6 +11,9 @@ import           Web.Scotty
 
 main :: IO ()
 main = do
+  -- initialize db connection
+
+  -- print noun and adj count
   putStrLn "Starting server at http://localhost:3000..."
   scotty 3000 $ do
     get "/" $ do
