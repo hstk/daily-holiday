@@ -1,18 +1,20 @@
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE DeriveGeneric      #-}
 {-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE QuasiQuotes    #-}
+{-# LANGUAGE QuasiQuotes        #-}
 
 
 module SQLiteSimpleBackend where
 
 import           Control.Applicative
--- import           Data.Monoid
+import           Data.Monoid
 import           Data.Maybe (fromJust)
+import           Data.Foldable
 
 import           Data.Int
 import           Data.Time
 import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
 import           Data.Text(Text(..))
 import           Data.ByteString.Lazy(ByteString(..))
 import qualified Data.ByteString.Lazy as BS
@@ -38,7 +40,13 @@ data Word = Word
   , addedBy :: Maybe (UserId)
   , banned  :: Bool
   , addedOn :: UTCTime
-  } deriving (Eq, Show, Generic)
+  }
+
+newtype Noun = Noun Word
+  deriving (Eq, Show, Generic)
+
+newtype Adjective = Adjective Word
+  deriving (Eq, Show, Generic)
 
 data UserStatus = Banned Text | Unconfirmed | Confirmed | Admin
   deriving (Show, Read, Eq, Ord, Generic)
@@ -83,52 +91,94 @@ instance ToRow User where
 instance FromRow User where
   fromRow = User <$> field <*> field <*> field <*> field <*> field <*> field
 
-zerp = do
-  conn <- open ":memory:"
+setupTestDb = do
+  conn <- open "data/test.db"
+  _ <- createTables conn
+  now <- getCurrentTime
+
+
+  traverse_ (insertUser conn) [hank, scott]
 
   close conn
 
-createTables :: Query
-createTables = [sql|
-  CREATE TABLE Noun(
-    wordId  INTEGER PRIMARY KEY,
-    word    TEXT NOT NULL UNIQUE,
-    addedBy INTEGER,
-    banned  BOOL,
-    addedOn DATETIME NOT NULL
-  );
+sampleUsers :: [User]
+sampleUsers = 
+  [ User (UserId 0) "hank"  "hstk@hstk.dev"  now 50 Admin
+  , User (UserId 1) "scott" "scott@bofh.net" now 10 (Banned "gefuzzled is not a word")
+  ]
 
-  CREATE TABLE Adjective(
-    wordId  INTEGER PRIMARY KEY,
+dropTables :: Connection -> IO ()
+dropTables conn = execute_ conn 
+  [sql|
+  DROP TABLE Noun;
+  DROP TABLE Adjective;
+  DROP TABLE User;
+  |]
+
+-- have to batch these out, can't create multiple tables in one statement
+createTables :: Connection -> IO ()
+createTables conn = traverse_ (execute_ conn) [
+  [sql| CREATE TABLE IF NOT EXISTS Noun(
+    id      INTEGER PRIMARY KEY,
     word    TEXT NOT NULL UNIQUE,
     addedBy INTEGER,
     banned  BOOL,
     addedOn DATETIME NOT NULL
-  );
-  
-  CREATE TABLE User(
-    userId     INTEGER PRIMARY KEY,
+  ); |],
+  [sql| CREATE TABLE IF NOT EXISTS Adjective(
+    id      INTEGER PRIMARY KEY,
+    word    TEXT NOT NULL UNIQUE,
+    addedBy INTEGER,
+    banned  BOOL,
+    addedOn DATETIME NOT NULL
+  ); |],
+  [sql| CREATE TABLE IF NOT EXISTS User(
+    id         INTEGER PRIMARY KEY,
     userName   TEXT,
     userEmail  TEXT NOT NULL,
     joinDate   DATETIME NOT NULL,
     holidays   INT,
     userStatus BLOB
-  );
+  ); |]
+  ]
+
+-- insertUser :: 
+insertUser :: Connection -> User -> IO ()
+insertUser conn (User {..}) = execute conn 
+  [sql|
+  INSERT INTO 
+  User(userName, userEmail, joinDate, holidays, userStatus) 
+  VALUES (?, ?, ?, ?, ?)
   |]
+  (userName, userEmail, joinDate, holidays, userStatus)
 
--- data HolidayDb f = HolidayDb 
---   { nouns      :: f (TableEntity WordT) 
---   , adjectives :: f (TableEntity WordT)
---   , users      :: f (TableEntity UserT) }
---     deriving (Generic, Database be)
+insertNoun :: Connection -> Noun -> IO ()
+insertNoun conn noun = do
+  [sql|
+  INSERT INTO 
+  Noun(userName, userEmail, joinDate, holidays, userStatus) 
+  VALUES (?, ?, ?, ?, ?)
+  |]
+  (userName, userEmail, joinDate, holidays, userStatus)
 
--- populateDb :: IO ()
--- populateDb = do
---   db <- open "/data/holiday.db"
---   now <- zonedTimeToLocalTime <$> getZonedTime
+insertAdjective :: Connection -> Adjective -> IO ()
+insertAdjective conn = do
+  undefined
 
---   runBeamSqliteDebug putStrLn db $ runInsert $ insert (users holidayDb) $ insertValues 
---     [ User "Hank"    "hstk@hstk.hstk"  now 50 Admin
---     , User "DarkArc" "wac@test.test"   now 5  Confirmed
---     , User "scott"   "scott@bofh.test" now 20 (Banned "For general scumbaggery")
---     ]
+insertWords :: Connection -> IO Text
+insertWords conn = do
+  adjectives <- T.lines <$> TIO.readFile "data/adjectives.txt"
+  nouns      <- T.lines <$> TIO.readFile "data/nouns.txt"
+  executeMany insertAdjective adjectives
+  executeMany insertNoun nouns
+
+readWords :: FilePath -> IO [Text]
+readWords path = fmap T.lines $ T.IO.readFile path
+
+getWord :: FilePath -> IO Text
+getWord path = readWords path >>= chooseWord
+
+chooseWord :: [Text] -> IO Text
+chooseWord xs = do
+  index <- randomRIO (0, length xs - 1)
+  return $ xs !! index
