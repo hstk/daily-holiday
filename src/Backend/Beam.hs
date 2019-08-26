@@ -11,7 +11,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
-module BeamBackend where
+module Backend.Beam () where
 
 import Prelude hiding (Word)
 

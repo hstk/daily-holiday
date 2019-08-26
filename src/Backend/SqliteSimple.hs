@@ -3,10 +3,12 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE QuasiQuotes        #-}
 
+module Backend.SqliteSimple () where
 
-module SQLiteSimpleBackend where
+import           Prelude hiding (Word)
 
 import           Control.Applicative
+import           Data.Functor ((<&>))
 import           Data.Monoid
 import           Data.Maybe (fromJust)
 import           Data.Foldable
@@ -35,18 +37,33 @@ import           Database.SQLite.Simple.QQ
 -- representing sum types : https://www.parsonsmatt.org/2019/03/19/sum_types_in_sql.html
 
 data Word = Word
-  { wordId  :: Int32
+  { wordId  :: Maybe WordId
   , word    :: Text
-  , addedBy :: Maybe (UserId)
+  , addedBy :: Maybe UserId
   , banned  :: Bool
   , addedOn :: UTCTime
-  }
+  } deriving (Eq, Show, Generic)
+
+newtype WordId = WordId { unWordId :: Int32 }
+  deriving (Eq, Show, Ord, Bounded)
+
+instance ToField WordId where
+  toField = toField . unWordId
+
+instance FromField WordId where
+  fromField = fromField
 
 newtype Noun = Noun Word
   deriving (Eq, Show, Generic)
 
 newtype Adjective = Adjective Word
   deriving (Eq, Show, Generic)
+
+instance ToRow Word where
+  toRow (Word {..}) = toRow (wordId, word, addedBy, banned, addedOn)
+
+instance FromRow Word where
+  fromRow = Word <$> field <*> field <*> field <*> field <*> field
 
 data UserStatus = Banned Text | Unconfirmed | Confirmed | Admin
   deriving (Show, Read, Eq, Ord, Generic)
@@ -76,7 +93,7 @@ instance FromField UserId where
   fromField = fromField
 
 data User = User
-  { userId     :: UserId
+  { userId     :: Maybe UserId
   , userName   :: Text
   , userEmail  :: Text
   , joinDate   :: UTCTime
@@ -91,20 +108,19 @@ instance ToRow User where
 instance FromRow User where
   fromRow = User <$> field <*> field <*> field <*> field <*> field <*> field
 
-setupTestDb = do
+resetTestDb = do
   conn <- open "data/test.db"
+  dropTables conn
   _ <- createTables conn
   now <- getCurrentTime
-
-
-  traverse_ (insertUser conn) [hank, scott]
-
+  _ <- traverse_ (insertUser conn) (sampleUsers now)
+  _ <- insertWords conn
   close conn
 
-sampleUsers :: [User]
-sampleUsers = 
-  [ User (UserId 0) "hank"  "hstk@hstk.dev"  now 50 Admin
-  , User (UserId 1) "scott" "scott@bofh.net" now 10 (Banned "gefuzzled is not a word")
+sampleUsers :: UTCTime -> [User]
+sampleUsers now = 
+  [ User (Just $ UserId 0) "hank"  "hstk@hstk.dev"  now 50 Admin
+  , User (Just $ UserId 1) "scott" "scott@bofh.net" now 10 (Banned "gefuzzled is not a word")
   ]
 
 dropTables :: Connection -> IO ()
@@ -118,28 +134,31 @@ dropTables conn = execute_ conn
 -- have to batch these out, can't create multiple tables in one statement
 createTables :: Connection -> IO ()
 createTables conn = traverse_ (execute_ conn) [
-  [sql| CREATE TABLE IF NOT EXISTS Noun(
-    id      INTEGER PRIMARY KEY,
-    word    TEXT NOT NULL UNIQUE,
-    addedBy INTEGER,
-    banned  BOOL,
-    addedOn DATETIME NOT NULL
-  ); |],
-  [sql| CREATE TABLE IF NOT EXISTS Adjective(
-    id      INTEGER PRIMARY KEY,
-    word    TEXT NOT NULL UNIQUE,
-    addedBy INTEGER,
-    banned  BOOL,
-    addedOn DATETIME NOT NULL
-  ); |],
-  [sql| CREATE TABLE IF NOT EXISTS User(
-    id         INTEGER PRIMARY KEY,
-    userName   TEXT,
-    userEmail  TEXT NOT NULL,
-    joinDate   DATETIME NOT NULL,
-    holidays   INT,
-    userStatus BLOB
-  ); |]
+  [sql| CREATE TABLE IF NOT EXISTS 
+    Noun(
+      id      INTEGER PRIMARY KEY,
+      word    TEXT NOT NULL UNIQUE,
+      addedBy INTEGER,
+      banned  BOOL,
+      addedOn DATETIME NOT NULL
+    ); |],
+  [sql| CREATE TABLE IF NOT EXISTS 
+    Adjective(
+      id      INTEGER PRIMARY KEY,
+      word    TEXT NOT NULL UNIQUE,
+      addedBy INTEGER,
+      banned  BOOL,
+      addedOn DATETIME NOT NULL
+    ); |],
+  [sql| CREATE TABLE IF NOT EXISTS 
+    User(
+      id         INTEGER PRIMARY KEY,
+      userName   TEXT,
+      userEmail  TEXT NOT NULL,
+      joinDate   DATETIME NOT NULL,
+      holidays   INT,
+      userStatus BLOB
+    ); |]
   ]
 
 -- insertUser :: 
@@ -153,32 +172,38 @@ insertUser conn (User {..}) = execute conn
   (userName, userEmail, joinDate, holidays, userStatus)
 
 insertNoun :: Connection -> Noun -> IO ()
-insertNoun conn noun = do
+insertNoun conn (Noun (Word {..})) = execute conn
   [sql|
   INSERT INTO 
-  Noun(userName, userEmail, joinDate, holidays, userStatus) 
-  VALUES (?, ?, ?, ?, ?)
+  Noun(word, addedBy, banned, addedOn) 
+  VALUES (?, ?, ?, ?)
   |]
-  (userName, userEmail, joinDate, holidays, userStatus)
+  (word, addedBy, banned, addedOn)
 
 insertAdjective :: Connection -> Adjective -> IO ()
-insertAdjective conn = do
-  undefined
+insertAdjective conn (Adjective (Word {..})) = execute conn
+  [sql|
+  INSERT INTO 
+  Adjective(word, addedBy, banned, addedOn)
+  VALUES (?, ?, ?, ?)
+  |]
+  (word, addedBy, banned, addedOn)
 
-insertWords :: Connection -> IO Text
+insertWords :: Connection -> IO ()
 insertWords conn = do
-  adjectives <- T.lines <$> TIO.readFile "data/adjectives.txt"
-  nouns      <- T.lines <$> TIO.readFile "data/nouns.txt"
-  executeMany insertAdjective adjectives
-  executeMany insertNoun nouns
+  adjWord  <- T.lines <$> TIO.readFile "data/adjectives.txt"
+  nounWord <- T.lines <$> TIO.readFile "data/nouns.txt"
 
-readWords :: FilePath -> IO [Text]
-readWords path = fmap T.lines $ T.IO.readFile path
+  now <- getCurrentTime
 
-getWord :: FilePath -> IO Text
-getWord path = readWords path >>= chooseWord
+  let toWordModel x = Word 
+        { wordId = Nothing
+        , word = x
+        , addedBy = Nothing
+        , banned = False
+        , addedOn = now }
+  let adjectives = Adjective . toWordModel <$> adjWord
+  let nouns = Noun . toWordModel <$> nounWord
 
-chooseWord :: [Text] -> IO Text
-chooseWord xs = do
-  index <- randomRIO (0, length xs - 1)
-  return $ xs !! index
+  traverse_ (insertAdjective conn) adjectives
+  traverse_ (insertNoun conn) nouns
