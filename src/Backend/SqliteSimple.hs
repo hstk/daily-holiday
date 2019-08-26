@@ -14,6 +14,7 @@ import           Data.Maybe (fromJust)
 import           Data.Foldable
 
 import           Data.Int
+import           Data.List (nub, sort)
 import           Data.Time
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
@@ -44,7 +45,7 @@ data Word = Word
   , addedOn :: UTCTime
   } deriving (Eq, Show, Generic)
 
-newtype WordId = WordId { unWordId :: Int32 }
+newtype WordId = WordId { unWordId :: Int64 }
   deriving (Eq, Show, Ord, Bounded)
 
 instance ToField WordId where
@@ -53,17 +54,27 @@ instance ToField WordId where
 instance FromField WordId where
   fromField = fromField
 
-newtype Noun = Noun Word
-  deriving (Eq, Show, Generic)
-
-newtype Adjective = Adjective Word
-  deriving (Eq, Show, Generic)
-
 instance ToRow Word where
   toRow (Word {..}) = toRow (wordId, word, addedBy, banned, addedOn)
 
 instance FromRow Word where
   fromRow = Word <$> field <*> field <*> field <*> field <*> field
+
+newtype Noun = Noun { unNoun :: Word }
+  deriving (Eq, Show, Generic)
+
+instance ToRow Noun where
+  toRow = toRow . unNoun
+instance FromRow Noun where
+  fromRow = Noun <$> fromRow
+
+newtype Adjective = Adjective { unAdjective :: Word }
+  deriving (Eq, Show, Generic)
+
+instance ToRow Adjective where
+  toRow = toRow . unAdjective
+instance FromRow Adjective where
+  fromRow = Adjective <$> fromRow
 
 data UserStatus = Banned Text | Unconfirmed | Confirmed | Admin
   deriving (Show, Read, Eq, Ord, Generic)
@@ -83,14 +94,14 @@ instance FromField UserStatus where
       Just status -> Ok status
       Nothing     -> returnError ConversionFailed f "Couldn't decode user status"
 
-newtype UserId = UserId { unUserId :: Int32 }
+newtype UserId = UserId { unUserId :: Int64 }
   deriving (Eq, Show, Ord)
 
 instance ToField UserId where
   toField = toField . unUserId
 
 instance FromField UserId where
-  fromField = fromField
+  fromField f = UserId <$> fromField f
 
 data User = User
   { userId     :: Maybe UserId
@@ -108,32 +119,12 @@ instance ToRow User where
 instance FromRow User where
   fromRow = User <$> field <*> field <*> field <*> field <*> field <*> field
 
-resetTestDb = do
-  conn <- open "data/test.db"
-  dropTables conn
-  _ <- createTables conn
-  now <- getCurrentTime
-  _ <- traverse_ (insertUser conn) (sampleUsers now)
-  _ <- insertWords conn
-  close conn
-
-sampleUsers :: UTCTime -> [User]
-sampleUsers now = 
-  [ User (Just $ UserId 0) "hank"  "hstk@hstk.dev"  now 50 Admin
-  , User (Just $ UserId 1) "scott" "scott@bofh.net" now 10 (Banned "gefuzzled is not a word")
-  ]
-
-dropTables :: Connection -> IO ()
-dropTables conn = execute_ conn 
-  [sql|
-  DROP TABLE Noun;
-  DROP TABLE Adjective;
-  DROP TABLE User;
-  |]
-
 -- have to batch these out, can't create multiple tables in one statement
+executeMany_ :: Connection -> [Query] -> IO ()
+executeMany_ conn xs = traverse_ (execute_ conn) xs
+
 createTables :: Connection -> IO ()
-createTables conn = traverse_ (execute_ conn) [
+createTables conn = executeMany_ conn [
   [sql| CREATE TABLE IF NOT EXISTS 
     Noun(
       id      INTEGER PRIMARY KEY,
@@ -161,40 +152,32 @@ createTables conn = traverse_ (execute_ conn) [
     ); |]
   ]
 
--- insertUser :: 
-insertUser :: Connection -> User -> IO ()
-insertUser conn (User {..}) = execute conn 
-  [sql|
-  INSERT INTO 
-  User(userName, userEmail, joinDate, holidays, userStatus) 
-  VALUES (?, ?, ?, ?, ?)
-  |]
-  (userName, userEmail, joinDate, holidays, userStatus)
+refreshTestDb :: IO ()
+refreshTestDb = do
+  conn <- open "data/test.db"
+  dropTables conn
+  _ <- createTables conn
+  now <- getCurrentTime
+  _ <- traverse_ (insertUser conn) (sampleUsers now)
+  _ <- insertWords conn
+  close conn
 
-insertNoun :: Connection -> Noun -> IO ()
-insertNoun conn (Noun (Word {..})) = execute conn
-  [sql|
-  INSERT INTO 
-  Noun(word, addedBy, banned, addedOn) 
-  VALUES (?, ?, ?, ?)
-  |]
-  (word, addedBy, banned, addedOn)
-
-insertAdjective :: Connection -> Adjective -> IO ()
-insertAdjective conn (Adjective (Word {..})) = execute conn
-  [sql|
-  INSERT INTO 
-  Adjective(word, addedBy, banned, addedOn)
-  VALUES (?, ?, ?, ?)
-  |]
-  (word, addedBy, banned, addedOn)
+prepCorpus :: [Text] -> [Text]
+prepCorpus = sort . nub
 
 insertWords :: Connection -> IO ()
 insertWords conn = do
-  adjWord  <- T.lines <$> TIO.readFile "data/adjectives.txt"
-  nounWord <- T.lines <$> TIO.readFile "data/nouns.txt"
-
+  adjWord  <- prepCorpus <$> T.lines <$> TIO.readFile "data/adjectives.txt"
+  nounWord <- prepCorpus <$> T.lines <$> TIO.readFile "data/nouns.txt"
   now <- getCurrentTime
+
+  let insertNounStatement = [sql|
+        INSERT INTO Noun(id, word, addedBy, banned, addedOn)
+        VALUES (?, ?, ?, ?, ?)|]
+
+  let insertAdjStatement = [sql|
+        INSERT INTO Adjective(id, word, addedBy, banned, addedOn) 
+        VALUES (?, ?, ?, ?, ?)|]
 
   let toWordModel x = Word 
         { wordId = Nothing
@@ -202,8 +185,56 @@ insertWords conn = do
         , addedBy = Nothing
         , banned = False
         , addedOn = now }
+  
   let adjectives = Adjective . toWordModel <$> adjWord
   let nouns = Noun . toWordModel <$> nounWord
 
-  traverse_ (insertAdjective conn) adjectives
-  traverse_ (insertNoun conn) nouns
+  executeMany conn insertNounStatement nouns
+  executeMany conn insertAdjStatement adjectives
+
+sampleUsers :: UTCTime -> [User]
+sampleUsers now = 
+  [ User (Just $ UserId 0) "hank"  "hstk@hstk.dev"  now 50 Admin
+  , User (Just $ UserId 1) "scott" "scott@bofh.net" now 10 (Banned "gefuzzled is not a word")
+  ]
+
+dropTables :: Connection -> IO ()
+dropTables conn = executeMany_ conn 
+  [ "DROP TABLE IF EXISTS Noun;"
+  , "DROP TABLE IF EXISTS Adjective;"
+  , "DROP TABLE IF EXISTS User;"
+  ]
+
+-- inserts
+insertUser :: Connection -> User -> IO ()
+insertUser conn u = execute conn 
+  [sql|
+  INSERT INTO 
+  User(userName, userEmail, joinDate, holidays, userStatus) 
+  VALUES (?, ?, ?, ?, ?)
+  |] u
+
+insertNoun :: Connection -> Noun -> IO ()
+insertNoun conn n = execute conn
+  [sql|
+  INSERT INTO 
+  Noun(id, word, addedBy, banned, addedOn) 
+  VALUES (?, ?, ?, ?, ?)
+  |] n
+
+insertAdjective :: Connection -> Adjective -> IO ()
+insertAdjective conn a = execute conn
+  [sql|
+  INSERT INTO 
+  Adjective(id, word, addedBy, banned, addedOn)
+  VALUES (?, ?, ?, ?)
+  |] a
+
+-- selects
+getUserById :: UserId -> Connection -> IO [User]
+getUserById (UserId x) conn = query conn 
+  "SELECT * FROM User WHERE id = ?" $ Only x
+
+testGet = do
+  conn <- open "data/test.db"
+  pure $ getUserById (UserId 1) conn

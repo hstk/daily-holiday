@@ -1,7 +1,6 @@
 abandoned
 able
 absolute
-adorable
 adventurous
 academic
 acceptable
@@ -270,13 +269,9 @@ disfigured
 disgusting
 disloyal
 dismal
-distant
-downright
-dreary
 dirty
 disguised
 dishonest
-dismal
 distant
 distinct
 distorted
@@ -783,7 +778,6 @@ obedient
 obese
 oblong
 oily
-oblong
 obvious
 occasional
 odd
@@ -871,7 +865,6 @@ precious
 present
 prestigious
 pretty
-precious
 previous
 pricey
 prickly
@@ -1164,7 +1157,6 @@ total
 tough
 traumatic
 treasured
-tremendous
 tragic
 trained
 tremendous
