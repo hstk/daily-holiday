@@ -11,7 +11,6 @@ import           Data.Int
 import           Data.Time
 import qualified Data.Text as T
 import           Data.Text (Text(..))
--- import qualified Data.Text.IO as TIO
 
 data Word = Word
   { wordId  :: WordId

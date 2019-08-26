@@ -32,7 +32,6 @@ import           Database.SQLite.Simple.ToField
 import           Database.SQLite.Simple.Time
 import           Database.SQLite.Simple.QQ
 
-
 -- https://hackage.haskell.org/package/sqlite-simple-0.4.16.0/docs/Database-SQLite-Simple.html
 -- dbs : https://www.reddit.com/r/haskell/comments/7tx0o4/haskell_3_sql/
 -- representing sum types : https://www.parsonsmatt.org/2019/03/19/sum_types_in_sql.html
@@ -235,6 +234,18 @@ getUserById :: UserId -> Connection -> IO [User]
 getUserById (UserId x) conn = query conn 
   "SELECT * FROM User WHERE id = ?" $ Only x
 
-testGet = do
-  conn <- open "data/test.db"
-  pure $ getUserById (UserId 1) conn
+getAdjectivesByUser :: UserId -> Connection -> IO [Adjective]
+getAdjectivesByUser (UserId x) conn = query conn
+  "SELECT * FROM Adjective where addedBy = ?" $ Only x
+
+getNounsByUser :: UserId -> Connection -> IO [Noun]
+getNounsByUser (UserId x) conn = query conn
+  "SELECT * FROM Noun where addedBy = ?" $ Only x
+
+getRandomPhrase :: Connection -> IO (Adjective, Noun)
+getRandomPhrase conn = do
+  adj <- query_ conn "SELECT * FROM Adjective ORDER BY RANDOM() LIMIT 1;" :: IO [Adjective]
+  noun <- query_ conn "SELECT * FROM Noun ORDER BY RANDOM() LIMIT 1;" :: IO [Noun]
+
+  -- upcase here
+  pure $ (head adj, head noun)
