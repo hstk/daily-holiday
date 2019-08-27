@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE DeriveGeneric      #-}
 
-module Backend.Types where
+module Backend.Types () where
 
 import           Prelude hiding (Word)
 
@@ -12,34 +12,34 @@ import           Data.Time
 import qualified Data.Text as T
 import           Data.Text (Text(..))
 
-data Word = Word
-  { wordId  :: WordId
-  , word    :: Text
-  , addedBy :: Maybe (UserId)
-  , banned  :: Bool
-  , addedOn :: UTCTime
-  } deriving (Eq, Show, Generic)
+-- data Word = Word
+--   { wordId  :: WordId
+--   , word    :: Text
+--   , addedBy :: Maybe (UserId)
+--   , banned  :: Bool
+--   , addedOn :: UTCTime
+--   } deriving (Eq, Show, Generic)
 
-newtype WordId = WordId { unWordId :: Int32 }
-  deriving (Eq, Show, Ord, Bounded)
+-- newtype WordId = WordId { unWordId :: Int64 }
+--   deriving (Eq, Show, Ord, Bounded)
 
-newtype Noun = Noun Word
-  deriving (Eq, Show, Generic)
+-- newtype Noun = Noun Word
+--   deriving (Eq, Show, Generic)
 
-newtype Adjective = Adjective Word
-  deriving (Eq, Show, Generic)
+-- newtype Adjective = Adjective Word
+--   deriving (Eq, Show, Generic)
 
-data User = User
-  { userId     :: UserId
-  , userName   :: Text
-  , userEmail  :: Text
-  , joinDate   :: UTCTime
-  , holidays   :: Int
-  , userStatus :: UserStatus
-  } deriving (Eq, Show, Generic)
+-- data User = User
+--   { userId     :: UserId
+--   , userName   :: Text
+--   , userEmail  :: Text
+--   , joinDate   :: UTCTime
+--   , holidays   :: Int
+--   , userStatus :: UserStatus
+--   } deriving (Eq, Show, Generic)
   
-newtype UserId = UserId { unUserId :: Int32 }
-  deriving (Eq, Show, Ord, Bounded)
+-- newtype UserId = UserId { unUserId :: Int64 }
+--   deriving (Eq, Show, Ord, Bounded)
 
-data UserStatus = Banned Text | Unconfirmed | Confirmed | Admin
-  deriving (Show, Read, Eq, Ord, Generic)
+-- data UserStatus = Banned Text | Unconfirmed | Confirmed | Admin
+--   deriving (Show, Read, Eq, Ord, Generic)

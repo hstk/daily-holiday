@@ -3,7 +3,7 @@
 {-# LANGUAGE RecordWildCards    #-}
 {-# LANGUAGE QuasiQuotes        #-}
 
-module Backend.SqliteSimple () where
+module Backend.SqliteSimple where
 
 import           Prelude hiding (Word)
 
@@ -153,7 +153,7 @@ createTables conn = executeMany_ conn [
 
 refreshTestDb :: IO ()
 refreshTestDb = do
-  conn <- open "data/test.db"
+  conn <- open "data/simple-test.db"
   dropTables conn
   _ <- createTables conn
   now <- getCurrentTime
@@ -244,8 +244,6 @@ getNounsByUser (UserId x) conn = query conn
 
 getRandomPhrase :: Connection -> IO (Adjective, Noun)
 getRandomPhrase conn = do
-  adj <- query_ conn "SELECT * FROM Adjective ORDER BY RANDOM() LIMIT 1;" :: IO [Adjective]
+  adj  <- query_ conn "SELECT * FROM Adjective ORDER BY RANDOM() LIMIT 1;" :: IO [Adjective]
   noun <- query_ conn "SELECT * FROM Noun ORDER BY RANDOM() LIMIT 1;" :: IO [Noun]
-
-  -- upcase here
   pure $ (head adj, head noun)
